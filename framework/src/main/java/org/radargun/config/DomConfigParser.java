@@ -1,22 +1,23 @@
 package org.radargun.config;
 
-import org.radargun.utils.TypedProperties;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.NodeList;
-import org.w3c.dom.Node;
-import org.w3c.dom.NamedNodeMap;
-import org.w3c.dom.Attr;
-import org.radargun.stages.GenerateChartStage;
-import org.radargun.stages.StartClusterStage;
-import org.radargun.Master;
-import org.radargun.Stage;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
-import java.util.Map;
-import java.util.HashMap;
-import java.util.Properties;
+
+import org.radargun.Master;
+import org.radargun.Stage;
+import org.radargun.stages.GenerateChartStage;
+import org.radargun.stages.StartClusterStage;
+import org.radargun.utils.TypedProperties;
+import org.w3c.dom.Attr;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 /**
  * @author Mircea.Markus@jboss.com
@@ -135,7 +136,7 @@ public class DomConfigParser extends ConfigParser {
       }
    }
 
-   private ScalingBenchmarkConfig buildBenchmarkPrototype(Element configRoot) {
+   private ScalingBenchmarkConfig buildBenchmarkPrototype(Element configRoot) throws Exception {
       ScalingBenchmarkConfig prototype;
       prototype = new ScalingBenchmarkConfig();
       Element benchmarkEl = (Element) configRoot.getElementsByTagName("benchmark").item(0);
@@ -158,6 +159,16 @@ public class DomConfigParser extends ConfigParser {
                attrToSet.put(attr.getName(), ConfigHelper.parseString(attr.getValue()));
             }
             ConfigHelper.setValues(st, attrToSet, true);
+            AdvancedStageConfigurator stageConfigurator = null;
+            for (Class<?> innerClass : st.getClass().getClasses()) {
+               if (AdvancedStageConfigurator.class.isAssignableFrom(innerClass)) {
+                  stageConfigurator = (AdvancedStageConfigurator) innerClass.newInstance();
+                  break;
+               }
+            }
+            if (stageConfigurator != null) {
+               stageConfigurator.configure(childEl, st);
+            }
          }
       }
       return prototype;
