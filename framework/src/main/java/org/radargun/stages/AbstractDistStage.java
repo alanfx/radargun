@@ -1,5 +1,8 @@
 package org.radargun.stages;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.radargun.DistStage;
@@ -8,8 +11,6 @@ import org.radargun.config.MasterConfig;
 import org.radargun.state.MasterState;
 import org.radargun.state.SlaveState;
 import org.radargun.utils.Utils;
-
-import java.util.List;
 
 /**
  * Support class for distributed stages.
@@ -23,6 +24,7 @@ public abstract class AbstractDistStage implements DistStage {
    protected transient SlaveState slaveState;
 
    protected transient MasterConfig masterConfig;
+   protected List<Integer> slaves;
 
    protected boolean exitBenchmarkOnSlaveFailure = false;
 
@@ -119,9 +121,14 @@ public abstract class AbstractDistStage implements DistStage {
 
    @Override
    public String toString() {
-      return "slaveIndex=" + slaveIndex +
-            ", activeSlavesCount=" + activeSlavesCount +
-            ", totalSlavesCount=" + totalSlavesCount +
-            "} ";
+      return "slaveIndex=" + slaveIndex + ", activeSlavesCount=" + activeSlavesCount + ", totalSlavesCount="
+            + totalSlavesCount + (slaves == null ? "}" : ", slaves=" + slaves + "}");
+   }
+
+   public void setSlaves(String slaves) {
+      this.slaves = new ArrayList<Integer>();
+      for (String slave : slaves.split(",")) {
+         this.slaves.add(Integer.valueOf(slave));
+      }
    }
 }
