@@ -21,7 +21,7 @@
       <module>plugins/ehcache25</module>
       <module>plugins/terracotta3</module>
       <module>plugins/chm</module>
-      <module>plugins/jdg600</module>
+      <module>plugins/jdg60</module>
    </modules>
 
    <scm>
@@ -163,6 +163,12 @@
 
                         <copy todir="${distribution.artifact}/plugins/chm">
                            <fileset dir="plugins/chm/target/distribution/plugin-chm-bin/plugin-chm">
+                              <include name="**/*" />
+                           </fileset>
+                        </copy>
+
+                        <copy todir="${distribution.artifact}/plugins/jdg60">
+                           <fileset dir="plugins/jdg60/target/distribution/plugin-jdg60-bin/plugin-jdg60">
                               <include name="**/*" />
                            </fileset>
                         </copy>
