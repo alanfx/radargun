@@ -28,13 +28,10 @@ public class KillStage extends AbstractDistStage {
       log.info("Received kill request from master...");
       DefaultDistStageAck ack = newDefaultStageAck();
       if (slaves.contains(getSlaveIndex())) {
-         BackgroundStats bgStats = (BackgroundStats) slaveState.get(BackgroundStats.NAME);
-         if (bgStats != null) {
-            bgStats.stopStressors();
-         }
          try {
             CacheWrapper cacheWrapper = slaveState.getCacheWrapper();
             if (cacheWrapper != null) {
+               BackgroundStats.beforeCacheWrapperDestroy(slaveState);
                if (cacheWrapper instanceof Killable) {
                   ((Killable) cacheWrapper).kill();
                } else {

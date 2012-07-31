@@ -38,6 +38,7 @@ public class BackgroundStats {
    private SlaveState slaveState;
    private long delayBetweenRequests;
    private StressorThread[] stressorThreads;
+   private SizeThread sizeThread;
    private CacheWrapper cacheWrapper;
    private int numSlaves;
    private int slaveIndex;
@@ -100,14 +101,20 @@ public class BackgroundStats {
       if (cacheWrapper == null) {
          throw new IllegalStateException("Can't start stressors, cache wrapper not available");
       }
+      //      if (!(cacheWrapper instanceof InterruptedExceptionChecker)) {
+      //         throw new IllegalStateException(
+      //               "CacheWrapper needs to implement interface BackgroundStats.InterruptedExceptionChecker");
+      //      }
       stressorThreads = new StressorThread[numThreads];
       int[] slaveKeyRange = divideRange(numEntries, numSlaves, slaveIndex);
       int slaveKeyRangeSize = slaveKeyRange[1] - slaveKeyRange[0];
       for (int i = 0; i < stressorThreads.length; i++) {
          int[] threadKeyRange = divideRange(slaveKeyRangeSize, numThreads, i);
-         stressorThreads[i] = new StressorThread(threadKeyRange[0], threadKeyRange[1]);
+         stressorThreads[i] = new StressorThread(threadKeyRange[0], threadKeyRange[1], i);
          stressorThreads[i].start();
       }
+      sizeThread = new SizeThread();
+      sizeThread.start();
    }
 
    /**
@@ -119,13 +126,20 @@ public class BackgroundStats {
       if (stressorThreads == null || cacheWrapper == null) {
          throw new IllegalStateException("Can't stop stressors, they're not running.");
       }
+      // first interrupt all threads
+      sizeThread.interrupt();
       for (int i = 0; i < stressorThreads.length; i++) {
+         stressorThreads[i].terminate = true;
          stressorThreads[i].interrupt();
-         try {
+      }
+      // then wait for them to finish
+      try {
+         sizeThread.join();
+         for (int i = 0; i < stressorThreads.length; i++) {
             stressorThreads[i].join();
-         } catch (InterruptedException e) {
-            log.warn("interrupted while waiting for stressor to stop");
          }
+      } catch (InterruptedException e1) {
+         log.error("interrupted while waiting for sizeThread and stressorThreads to stop");
       }
       stressorThreads = null;
       cacheWrapper = null;
@@ -152,7 +166,7 @@ public class BackgroundStats {
       try {
          backgroundStatsThread.join();
       } catch (InterruptedException e) {
-         log.warn("Interrupted while waiting for stat thread to end.");
+         log.error("Interrupted while waiting for stat thread to end.");
       }
       List<Stats> statsToReturn = stats;
       stats = null;
@@ -160,6 +174,10 @@ public class BackgroundStats {
    }
 
    private class BackgroundStatsThread extends Thread {
+
+      public BackgroundStatsThread() {
+         super("BackgroundStatsThread");
+      }
 
       public void run() {
          try {
@@ -187,10 +205,48 @@ public class BackgroundStats {
                }
             }
             if (r != null) {
-               r.cacheSize = cacheWrapper.size();
+               r.cacheSize = sizeThread.getAndResetSize();
             }
             return r;
          }
+      }
+   }
+
+   /**
+    * 
+    * Used for fetching cache size. If the size can't be fetched during one stat iteration, value 0
+    * will be used.
+    * 
+    */
+   private class SizeThread extends Thread {
+      public SizeThread() {
+         super("SizeThread");
+      }
+
+      private boolean getSize = true;
+      private int size = -1;
+
+      @Override
+      public synchronized void run() {
+         try {
+            while (!isInterrupted()) {
+               while (!getSize) {
+                  wait(100);
+               }
+               getSize = false;
+               size = cacheWrapper.size();
+            }
+         } catch (InterruptedException e) {
+            log.trace("SizeThread interrupted.");
+         }
+      }
+
+      public synchronized int getAndResetSize() {
+         int rSize = size;
+         size = -1;
+         getSize = true;
+         notify();
+         return rSize;
       }
    }
 
@@ -203,9 +259,10 @@ public class BackgroundStats {
       private int keyRangeStart;
       private int keyRangeEnd;
       private int currentKey;
+      private volatile boolean terminate = false;
 
-      public StressorThread(int keyRangeStart, int keyRangeEnd) {
-         super();
+      public StressorThread(int keyRangeStart, int keyRangeEnd, int idx) {
+         super("StressorThread-" + idx);
          this.keyRangeStart = keyRangeStart;
          this.keyRangeEnd = keyRangeEnd;
          this.currentKey = keyRangeStart;
@@ -224,7 +281,7 @@ public class BackgroundStats {
                }
                currentKey = keyRangeStart;
             }
-            while (true) {
+            while (!isInterrupted() && !terminate) {
                makeRequest();
                sleep(delayBetweenRequests);
             }
@@ -280,8 +337,24 @@ public class BackgroundStats {
             }
          } catch (InterruptedException e) {
             throw e;
-         } catch (Throwable e) {
+         } catch (Exception e) {
+            InterruptedException ie = findInterruptionCause(null, e);
+            if (ie != null) {
+               throw ie;
+            } else {
+               log.error("Cache operation error", e);
+            }
             threadStats.registerError(lastOpTime(), isPut);
+         }
+      }
+
+      private InterruptedException findInterruptionCause(Throwable eParent, Throwable e) {
+         if (e == null || eParent == e) {
+            return null;
+         } else if (e instanceof InterruptedException) {
+            return (InterruptedException) e;
+         } else {
+            return findInterruptionCause(e, e.getCause());
          }
       }
 
@@ -564,5 +637,44 @@ public class BackgroundStats {
          return cacheSize;
       }
 
+      public static double getCacheSizeMaxRelativeDeviation(List<Stats> stats) {
+         if (stats.isEmpty() || stats.size() == 1) {
+            return 0;
+         }
+         double sum = 0;
+         int cnt = 0;
+         for (Stats s : stats) {
+            if (s.isNodeUp() && s.cacheSize != -1) {
+               sum += (double) s.cacheSize;
+               cnt++;
+            }
+         }
+         double avg = sum / ((double) cnt);
+         double maxDev = -1;
+         for (Stats s : stats) {
+            if (s.isNodeUp() && s.cacheSize != -1) {
+               double dev = Math.abs(avg - ((double) s.cacheSize));
+               if (dev > maxDev) {
+                  maxDev = dev;
+               }
+            }
+         }
+         return (maxDev / avg) * 100d;
+      }
+
+   }
+
+   public static void beforeCacheWrapperDestroy(SlaveState slaveState) {
+      BackgroundStats bgStats = (BackgroundStats) slaveState.get(BackgroundStats.NAME);
+      if (bgStats != null) {
+         bgStats.stopStressors();
+      }
+   }
+
+   public static void afterCacheWrapperStart(SlaveState slaveState) {
+      BackgroundStats bgStats = (BackgroundStats) slaveState.get(BackgroundStats.NAME);
+      if (bgStats != null) {
+         bgStats.startStressors();
+      }
    }
 }

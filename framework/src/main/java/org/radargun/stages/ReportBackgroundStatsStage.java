@@ -7,6 +7,7 @@ import java.io.PrintWriter;
 import java.text.DecimalFormat;
 import java.text.Format;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.apache.commons.logging.Log;
@@ -24,12 +25,12 @@ import org.radargun.stressors.BackgroundStats.Stats;
  */
 public class ReportBackgroundStatsStage extends AbstractMasterStage {
    public static final Format NUMFORMAT = new DecimalFormat("0.000");
-   public static final int CHART_W = 800;
-   public static final int CHART_H = 600;
 
    private static Log log = LogFactory.getLog(ReportBackgroundStatsStage.class);
 
    private String targetDir = "reports";
+   private int chartWidth = 800;
+   private int chartHeight = 600;
 
    public boolean execute() {
       @SuppressWarnings("unchecked")
@@ -89,26 +90,21 @@ public class ReportBackgroundStatsStage extends AbstractMasterStage {
                }
             }
          });
-         generateMultiSlaveCsv(csvEntryCounts, results, maxResultSize, new StatGetter() {
-            @Override
-            public String getStat(Stats cell) {
-               if (cell.isNodeUp()) {
-                  return Integer.toString(cell.getCacheSize());
-               } else {
-                  return "0";
-               }
-            }
-         });
+         generateEntryCountCsv(csvEntryCounts, results, maxResultSize);
 
          CSVChart.writeCSVAsChart("Throughput on slaves", "Iteration", "Throughput (ops/sec)",
-               csvThroughput.getAbsolutePath(), CSVChart.SEPARATOR, "Iteration", getSlaveNames(), CHART_W, CHART_H,
-               csvThroughput.getAbsolutePath() + ".png");
+               csvThroughput.getAbsolutePath(), CSVChart.SEPARATOR, "Iteration", getSlaveNames(), chartWidth,
+               chartHeight, csvThroughput.getAbsolutePath() + ".png");
          CSVChart.writeCSVAsChart("Average response times", "Iteration", "Average response time (ms)",
-               csvAvgRespTimes.getAbsolutePath(), CSVChart.SEPARATOR, "Iteration", getSlaveNames(), CHART_W, CHART_H,
-               csvAvgRespTimes.getAbsolutePath() + ".png");
+               csvAvgRespTimes.getAbsolutePath(), CSVChart.SEPARATOR, "Iteration", getSlaveNames(), chartWidth,
+               chartHeight, csvAvgRespTimes.getAbsolutePath() + ".png");
          CSVChart.writeCSVAsChart("Entry counts in slaves", "Iteration", "Number of entries",
-               csvEntryCounts.getAbsolutePath(), CSVChart.SEPARATOR, "Iteration", getSlaveNames(), CHART_W, CHART_H,
-               csvEntryCounts.getAbsolutePath() + ".png");
+               csvEntryCounts.getAbsolutePath(), CSVChart.SEPARATOR, "Iteration", getSlaveNames(), chartWidth,
+               chartHeight, csvEntryCounts.getAbsolutePath() + ".png");
+         CSVChart.writeCSVAsChart("Max. Relative deviation of entry counts", "Iteration", "Relative deviation (%)",
+               csvEntryCounts.getAbsolutePath(), CSVChart.SEPARATOR, "Iteration",
+               Collections.singletonList("MaxRelDev"), chartWidth, chartHeight, csvEntryCounts.getAbsolutePath()
+                     + "deviation.png");
 
          return true;
       } catch (Exception e) {
@@ -151,6 +147,38 @@ public class ReportBackgroundStatsStage extends AbstractMasterStage {
                w.print(CSVChart.NULL);
             }
          }
+         w.println();
+      }
+      w.close();
+   }
+
+   private void generateEntryCountCsv(File file, List<List<Stats>> results, int maxResultSize) throws Exception {
+      PrintWriter w = new PrintWriter(new OutputStreamWriter(new FileOutputStream(file), "UTF-8"));
+      w.print("Iteration");
+      List<String> slaveNames = getSlaveNames();
+      for (int i = 0; i < slaveNames.size(); i++) {
+         w.print(CSVChart.SEPARATOR);
+         w.print(slaveNames.get(i));
+      }
+      w.print(CSVChart.SEPARATOR);
+      w.print("MaxRelDev");
+      w.println();
+      List<Stats> row = new ArrayList<Stats>();
+      for (int i = 0; i < maxResultSize; i++) {
+         w.print(i);
+         row.clear();
+         for (int j = 0; j < results.size(); j++) {
+            w.print(CSVChart.SEPARATOR);
+            List<Stats> statList = results.get(j);
+            if (i < statList.size() && statList.get(i).getCacheSize() != -1 && statList.get(i).isNodeUp()) {
+               w.print(statList.get(i).getCacheSize());
+               row.add(statList.get(i));
+            } else {
+               w.print(0);
+            }
+         }
+         w.print(CSVChart.SEPARATOR);
+         w.print(ffcsv(Stats.getCacheSizeMaxRelativeDeviation(row)));
          w.println();
       }
       w.close();

@@ -78,10 +78,7 @@ public class StartClusterStage extends AbstractDistStage {
                }
             }
          }
-         BackgroundStats bgStats = (BackgroundStats) slaveState.get(BackgroundStats.NAME);
-         if (bgStats != null) {
-            bgStats.startStressors();
-         }
+         BackgroundStats.afterCacheWrapperStart(slaveState);
       } catch (Exception e) {
          log.error("Issues while instantiating/starting cache wrapper", e);
          ack.setError(true);

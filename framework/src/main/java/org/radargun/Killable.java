@@ -7,5 +7,12 @@ package org.radargun;
  * @author Michal Linhard <mlinhard@redhat.com>
  */
 public interface Killable {
+   /**
+    * 
+    * Kill the CacheWrapper instance abruptly.
+    * 
+    * @throws Exception
+    */
    void kill() throws Exception;
+
 }
