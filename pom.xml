@@ -21,6 +21,7 @@
       <module>plugins/ehcache25</module>
       <module>plugins/terracotta3</module>
       <module>plugins/chm</module>
+      <module>plugins/jdg600</module>
    </modules>
 
    <scm>
