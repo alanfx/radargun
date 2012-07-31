@@ -10,7 +10,6 @@
    </parent>
 
    <artifactId>plugin-jdg60</artifactId>
-   <version>1.1.0-SNAPSHOT</version>
    <name>JDG 6.0.x plugin for RadarGun</name>
 
    <dependencies>
@@ -22,31 +21,12 @@
 
       <dependency>
          <groupId>org.radargun</groupId>
-         <artifactId>plugin-infinispan4</artifactId>
+         <artifactId>plugin-infinispan51</artifactId>
          <version>1.1.0-SNAPSHOT</version>
          <exclusions>
             <exclusion>
                <groupId>org.infinispan</groupId>
                <artifactId>infinispan-core</artifactId>
-            </exclusion>
-         </exclusions>
-      </dependency>
-
-      <!-- needed for jbosstm lookup -->
-      <dependency>
-         <groupId>org.radargun</groupId>
-         <artifactId>plugin-infinispan50</artifactId>
-         <version>1.1.0-SNAPSHOT</version>
-      </dependency>
-
-      <dependency>
-         <groupId>org.jboss.jbossts</groupId>
-         <artifactId>jbossjta</artifactId>
-         <version>4.16.3.Final</version>
-         <exclusions>
-            <exclusion>
-               <groupId>org.jboss.logging</groupId>
-               <artifactId>jboss-logging-spi</artifactId>
             </exclusion>
          </exclusions>
       </dependency>
