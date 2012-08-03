@@ -69,6 +69,8 @@ public class ReportBackgroundStatsStage extends AbstractMasterStage {
          File csvThroughput = new File(subdir, "throughput.csv");
          File csvAvgRespTimes = new File(subdir, "avg-response-times.csv");
          File csvEntryCounts = new File(subdir, "entry-counts.csv");
+         File csvNullGets = new File(subdir, "null-responses.csv");
+         File csvErrors = new File(subdir, "errors.csv");
 
          generateMultiSlaveCsv(csvThroughput, results, maxResultSize, new StatGetter() {
             @Override
@@ -90,26 +92,64 @@ public class ReportBackgroundStatsStage extends AbstractMasterStage {
                }
             }
          });
+         generateMultiSlaveCsv(csvNullGets, results, maxResultSize, new StatGetter() {
+            @Override
+            public String getStat(Stats cell) {
+               if (cell.isNodeUp()) {
+                  return Long.toString(cell.getRequestsNullGet());
+               } else {
+                  return "0";
+               }
+            }
+         });
+         generateMultiSlaveCsv(csvErrors, results, maxResultSize, new StatGetter() {
+            @Override
+            public String getStat(Stats cell) {
+               if (cell.isNodeUp()) {
+                  return Long.toString(cell.getNumErrors());
+               } else {
+                  return "0";
+               }
+            }
+         });
          generateEntryCountCsv(csvEntryCounts, results, maxResultSize);
 
          CSVChart.writeCSVAsChart("Throughput on slaves", "Iteration", "Throughput (ops/sec)",
                csvThroughput.getAbsolutePath(), CSVChart.SEPARATOR, "Iteration", getSlaveNames(), chartWidth,
-               chartHeight, csvThroughput.getAbsolutePath() + ".png");
+               chartHeight, replaceExtension(csvThroughput.getAbsolutePath(), "png"));
          CSVChart.writeCSVAsChart("Average response times", "Iteration", "Average response time (ms)",
                csvAvgRespTimes.getAbsolutePath(), CSVChart.SEPARATOR, "Iteration", getSlaveNames(), chartWidth,
-               chartHeight, csvAvgRespTimes.getAbsolutePath() + ".png");
+               chartHeight, replaceExtension(csvAvgRespTimes.getAbsolutePath(), "png"));
          CSVChart.writeCSVAsChart("Entry counts in slaves", "Iteration", "Number of entries",
                csvEntryCounts.getAbsolutePath(), CSVChart.SEPARATOR, "Iteration", getSlaveNames(), chartWidth,
-               chartHeight, csvEntryCounts.getAbsolutePath() + ".png");
+               chartHeight, replaceExtension(csvEntryCounts.getAbsolutePath(), "png"));
          CSVChart.writeCSVAsChart("Max. Relative deviation of entry counts", "Iteration", "Relative deviation (%)",
                csvEntryCounts.getAbsolutePath(), CSVChart.SEPARATOR, "Iteration",
-               Collections.singletonList("MaxRelDev"), chartWidth, chartHeight, csvEntryCounts.getAbsolutePath()
-                     + "deviation.png");
+               Collections.singletonList("MaxRelDev"), chartWidth, chartHeight,
+               replaceExtension(csvEntryCounts.getAbsolutePath(), "deviation.png"));
+         CSVChart.writeCSVAsChart("Null response count", "Iteration", "Number of null responses",
+               csvNullGets.getAbsolutePath(), CSVChart.SEPARATOR, "Iteration", getSlaveNames(), chartWidth,
+               chartHeight, replaceExtension(csvNullGets.getAbsolutePath(), "png"));
+         CSVChart.writeCSVAsChart("Number of errors on slaves", "Iteration", "Number of errors",
+               csvErrors.getAbsolutePath(), CSVChart.SEPARATOR, "Iteration", getSlaveNames(), chartWidth, chartHeight,
+               replaceExtension(csvErrors.getAbsolutePath(), "png"));
 
          return true;
       } catch (Exception e) {
          log.error("Error while generating CSV from BackgroundStats", e);
          return false;
+      }
+   }
+
+   private String replaceExtension(String filename, String newExtension) {
+      if (filename == null) {
+         return null;
+      }
+      int dotIndex = filename.lastIndexOf(".");
+      if (dotIndex == -1) {
+         return filename + newExtension;
+      } else {
+         return filename.substring(0, dotIndex + 1) + newExtension;
       }
    }
 

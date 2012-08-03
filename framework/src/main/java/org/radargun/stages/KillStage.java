@@ -27,7 +27,7 @@ public class KillStage extends AbstractDistStage {
    public DistStageAck executeOnSlave() {
       log.info("Received kill request from master...");
       DefaultDistStageAck ack = newDefaultStageAck();
-      if (slaves.contains(getSlaveIndex())) {
+      if (slaves != null && slaves.contains(getSlaveIndex())) {
          try {
             CacheWrapper cacheWrapper = slaveState.getCacheWrapper();
             if (cacheWrapper != null) {

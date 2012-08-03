@@ -1,5 +1,8 @@
 package org.radargun.stages;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.radargun.DistStageAck;
 import org.radargun.stressors.BackgroundStats;
 
@@ -16,17 +19,26 @@ public class StartBackgroundStatsStage extends AbstractDistStage {
    private int numEntries = 1024;
    private int entrySize = 1024;
    private int numThreads = 10;
+   private int transactionSize = -1;
    private long delayBetweenRequests;
    private long statsIterationDuration = 5000;
+   private boolean waitUntilLoaded = true;
+   protected List<Integer> loadDataForDeadSlaves;
 
    @Override
    public DistStageAck executeOnSlave() {
       DefaultDistStageAck ack = newDefaultStageAck();
       try {
          BackgroundStats bgStats = new BackgroundStats(puts, gets, numEntries, entrySize, numThreads, slaveState,
-               delayBetweenRequests, getActiveSlaveCount(), getSlaveIndex(), statsIterationDuration);
+               delayBetweenRequests, getActiveSlaveCount(), getSlaveIndex(), statsIterationDuration, transactionSize, loadDataForDeadSlaves);
+         log.info("Starting stressor threads");
          if (slaveState.getCacheWrapper() != null) {
             bgStats.startStressors();
+            if (waitUntilLoaded) {
+               log.info("Waiting until all stressor threads load data");
+               bgStats.waitUntilLoaded();
+            }
+            bgStats.setLoaded();
          }
          bgStats.startStats();
          slaveState.put(BackgroundStats.NAME, bgStats);
@@ -67,4 +79,18 @@ public class StartBackgroundStatsStage extends AbstractDistStage {
       this.statsIterationDuration = statsIterationDuration;
    }
 
+   public void setTransactionSize(int transactionSize) {
+      this.transactionSize = transactionSize;
+   }
+
+   public void setWaitUntilLoaded(boolean waitUntilLoaded) {
+      this.waitUntilLoaded = waitUntilLoaded;
+   }
+
+   public void setLoadDataForDeadSlaves(String slaves) {
+      this.loadDataForDeadSlaves = new ArrayList<Integer>();
+      for (String slave : slaves.split(",")) {
+         this.loadDataForDeadSlaves.add(Integer.valueOf(slave));
+      }
+   }
 }

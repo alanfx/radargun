@@ -16,8 +16,6 @@ import org.radargun.utils.Utils;
  */
 public class StartClusterStage extends AbstractDistStage {
 
-   private String productName;
-   private boolean useSmartClassLoading = true;
    private boolean performClusterSizeValidation = true;
    private boolean staggerSlaveStartup = true;
    private long delayAfterFirstSlaveStarts = 5000;
@@ -27,8 +25,6 @@ public class StartClusterStage extends AbstractDistStage {
    private String config;
    private final int TRY_COUNT = 180;
 
-   private static final String PREV_PRODUCT = "StartClusterStage.previousProduct";
-   private static final String CLASS_LOADER = "StartClusterStage.classLoader";
    private TypedProperties confAttributes;
 
    public StartClusterStage() {
@@ -95,35 +91,11 @@ public class StartClusterStage extends AbstractDistStage {
       return ack;
    }
 
-   private Object createInstance(String classFqn) throws Exception {
-      if (!useSmartClassLoading) {
-         return Class.forName(classFqn).newInstance();
-      }
-      URLClassLoader classLoader;
-      String prevProduct = (String) slaveState.get(PREV_PRODUCT);
-      if (prevProduct == null || !prevProduct.equals(productName)) {
-         classLoader = createLoader();
-         slaveState.put(CLASS_LOADER, classLoader);
-         slaveState.put(PREV_PRODUCT, productName);
-      } else {//same product and there is a class loader
-         classLoader = (URLClassLoader) slaveState.get(CLASS_LOADER);
-      }
-      log.info("Creating newInstance " + classFqn + " with classloader " + classLoader);
-      Thread.currentThread().setContextClassLoader(classLoader);
-      return classLoader.loadClass(classFqn).newInstance();
-   }
-
-   private URLClassLoader createLoader() throws Exception {
-      return Utils.buildProductSpecificClassLoader(productName, this.getClass().getClassLoader());
-   }
 
    public void setConfig(String config) {
       this.config = config;
    }
 
-   public void setUseSmartClassLoading(boolean useSmartClassLoading) {
-      this.useSmartClassLoading = useSmartClassLoading;
-   }
 
    public void setPerformCLusterSizeValidation(boolean performCLusterSizeValidation) {
       this.performClusterSizeValidation = performCLusterSizeValidation;
@@ -132,18 +104,12 @@ public class StartClusterStage extends AbstractDistStage {
    @Override
    public void initOnMaster(MasterState masterState, int slaveIndex) {
       super.initOnMaster(masterState, slaveIndex);
-      this.productName = masterState.nameOfTheCurrentBenchmark();
    }
 
    @Override
    public String toString() {
-      return "StartClusterStage {" +
-            "productName='" + productName + '\'' +
-            ", useSmartClassLoading=" + useSmartClassLoading +
-            ", config=" + config +
-            ", " + super.toString();
+      return "StartClusterStage {config=" + config + ", " + super.toString();
    }
-
 
    public void setStaggerSlaveStartup(boolean staggerSlaveStartup) {
       this.staggerSlaveStartup = staggerSlaveStartup;

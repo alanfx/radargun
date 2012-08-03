@@ -4,13 +4,13 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 /**
- * Sleeps specified number of milliseconds.
+ * Validates cluster via JMX
  * 
  * @author Michal Linhard <mlinhard@redhat.com>
  */
-public class SleepStage extends AbstractMasterStage {
+public class JMXClusterValidationStage extends AbstractMasterStage {
 
-   private static Log log = LogFactory.getLog(SleepStage.class);
+   private static Log log = LogFactory.getLog(JMXClusterValidationStage.class);
 
    private long time;
 

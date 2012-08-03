@@ -46,9 +46,12 @@ public class BackgroundStats {
    private BackgroundStatsThread backgroundStatsThread;
    private long statsIteration;
    private boolean loaded = false;
+   private int transactionSize;
+   private List<Integer> loadDataForDeadSlaves;
 
    public BackgroundStats(int puts, int gets, int numEntries, int entrySize, int numThreads, SlaveState slaveState,
-         long delayBetweenRequests, int numSlaves, int slaveIndex, long statsIteration) {
+         long delayBetweenRequests, int numSlaves, int slaveIndex, long statsIteration, int transactionSize,
+         List<Integer> loadDataForDeadSlaves) {
       super();
       this.puts = puts;
       this.gets = gets;
@@ -60,6 +63,8 @@ public class BackgroundStats {
       this.numSlaves = numSlaves;
       this.slaveIndex = slaveIndex;
       this.statsIteration = statsIteration;
+      this.transactionSize = transactionSize;
+      this.loadDataForDeadSlaves = loadDataForDeadSlaves;
    }
 
    /**
@@ -101,20 +106,41 @@ public class BackgroundStats {
       if (cacheWrapper == null) {
          throw new IllegalStateException("Can't start stressors, cache wrapper not available");
       }
-      //      if (!(cacheWrapper instanceof InterruptedExceptionChecker)) {
-      //         throw new IllegalStateException(
-      //               "CacheWrapper needs to implement interface BackgroundStats.InterruptedExceptionChecker");
-      //      }
       stressorThreads = new StressorThread[numThreads];
       int[] slaveKeyRange = divideRange(numEntries, numSlaves, slaveIndex);
-      int slaveKeyRangeSize = slaveKeyRange[1] - slaveKeyRange[0];
       for (int i = 0; i < stressorThreads.length; i++) {
-         int[] threadKeyRange = divideRange(slaveKeyRangeSize, numThreads, i);
-         stressorThreads[i] = new StressorThread(threadKeyRange[0], threadKeyRange[1], i);
+         int[] threadKeyRange = divideRange(slaveKeyRange[1] - slaveKeyRange[0], numThreads, i);
+         stressorThreads[i] = new StressorThread(slaveKeyRange[0] + threadKeyRange[0], slaveKeyRange[0]
+               + threadKeyRange[1], i);
          stressorThreads[i].start();
       }
       sizeThread = new SizeThread();
       sizeThread.start();
+   }
+
+   /**
+    * 
+    * Waits until all stressor threads load data.
+    * 
+    * @throws InterruptedException
+    * 
+    */
+   public void waitUntilLoaded() throws InterruptedException {
+      if (stressorThreads == null) {
+         return;
+      }
+      boolean loaded = false;
+      while (!loaded) {
+         loaded = true;
+         for (StressorThread st : stressorThreads) {
+            if (!st.loaded) {
+               loaded = false;
+            }
+         }
+         if (!loaded) {
+            Thread.sleep(100);
+         }
+      }
    }
 
    /**
@@ -260,26 +286,53 @@ public class BackgroundStats {
       private int keyRangeEnd;
       private int currentKey;
       private volatile boolean terminate = false;
+      private int remainingTxOps;
+      private boolean loaded = BackgroundStats.this.loaded;
+      private int idx;
 
       public StressorThread(int keyRangeStart, int keyRangeEnd, int idx) {
          super("StressorThread-" + idx);
          this.keyRangeStart = keyRangeStart;
          this.keyRangeEnd = keyRangeEnd;
          this.currentKey = keyRangeStart;
+         this.remainingTxOps = transactionSize;
+         this.idx = idx;
       }
 
-      @Override
-      public void run() {
-         try {
-            if (!loaded) {
-               for (currentKey = keyRangeStart; currentKey < keyRangeEnd; currentKey++) {
+      private void loadData() {
+         for (currentKey = keyRangeStart; currentKey < keyRangeEnd; currentKey++) {
+            try {
+               cacheWrapper.put(NAME, key(currentKey), generateRandomString(entrySize));
+            } catch (Exception e) {
+               log.error("Error while loading data", e);
+            }
+         }
+         if (loadDataForDeadSlaves != null && !loadDataForDeadSlaves.isEmpty()) {
+            // each slave takes responsibility to load keys for a subset of dead slaves
+            int[] deadSlaveIdxRange = divideRange(loadDataForDeadSlaves.size(), numSlaves, slaveIndex); // range of dead slaves this slave will load data for
+            for (int deadSlaveIdx = deadSlaveIdxRange[0]; deadSlaveIdx < deadSlaveIdxRange[1]; deadSlaveIdx++) {
+               int[] deadSlaveKeyRange = divideRange(numEntries, numSlaves, deadSlaveIdx); // key range for the current dead slave
+               int[] keyRange = divideRange(deadSlaveKeyRange[1] - deadSlaveKeyRange[0], numThreads, idx); // key range for this thread
+               int deadKeyRangeStart = deadSlaveKeyRange[0] + keyRange[0];
+               int deadKeyRangeEnd = deadSlaveKeyRange[0] + keyRange[1];
+               for (currentKey = deadKeyRangeStart; currentKey < deadKeyRangeEnd; currentKey++) {
                   try {
                      cacheWrapper.put(NAME, key(currentKey), generateRandomString(entrySize));
                   } catch (Exception e) {
                      log.error("Error while loading data", e);
                   }
                }
-               currentKey = keyRangeStart;
+            }
+         }
+         currentKey = keyRangeStart;
+         loaded = true;
+      }
+
+      @Override
+      public void run() {
+         try {
+            if (!loaded) {
+               loadData();
             }
             while (!isInterrupted() && !terminate) {
                makeRequest();
@@ -311,14 +364,14 @@ public class BackgroundStats {
             if (currentKey == keyRangeEnd) {
                currentKey = keyRangeStart;
             }
+            if (transactionSize != -1 && remainingTxOps == transactionSize) {
+               cacheWrapper.startTransaction();
+            }
             if (remainingGets > 0) {
                reqDescription = "GET(" + key + ")";
                resetLastOpTime();
                Object result = cacheWrapper.get(NAME, key);
-               if (result == null) {
-                  throw new Exception("null result for request " + reqDescription);
-               }
-               threadStats.registerRequest(lastOpTime(), isPut);
+               threadStats.registerRequest(lastOpTime(), isPut, result == null);
                log.trace(reqDescription + " sucessfull");
                remainingGets--;
             } else if (remainingPuts > 0) {
@@ -326,7 +379,7 @@ public class BackgroundStats {
                reqDescription = "PUT(" + key + ")";
                resetLastOpTime();
                cacheWrapper.put(NAME, key, generateRandomString(entrySize));
-               threadStats.registerRequest(lastOpTime(), isPut);
+               threadStats.registerRequest(lastOpTime(), isPut, false);
                remainingPuts--;
             } else {
                throw new Exception("Both puts and gets can't be zero!");
@@ -335,14 +388,27 @@ public class BackgroundStats {
                remainingGets = gets;
                remainingPuts = puts;
             }
-         } catch (InterruptedException e) {
-            throw e;
+            if (transactionSize != -1) {
+               remainingTxOps--;
+               if (remainingTxOps == 0) {
+                  cacheWrapper.endTransaction(true);
+                  remainingTxOps = transactionSize;
+               }
+            }
          } catch (Exception e) {
             InterruptedException ie = findInterruptionCause(null, e);
             if (ie != null) {
                throw ie;
             } else {
                log.error("Cache operation error", e);
+            }
+            if (transactionSize != -1) {
+               try {
+                  cacheWrapper.endTransaction(false);
+               } catch (Exception e1) {
+                  log.error("Error while ending transaction", e);
+               }
+               remainingTxOps = transactionSize;
             }
             threadStats.registerError(lastOpTime(), isPut);
          }
@@ -380,6 +446,7 @@ public class BackgroundStats {
       protected long requestsGet;
       protected long maxResponseTimeGet = Long.MAX_VALUE;
       protected long responseTimeSumGet = 0;
+      protected long requestsNullGet;
 
       protected long intervalBeginTime;
       protected long intervalEndTime;
@@ -402,7 +469,7 @@ public class BackgroundStats {
          return nodeUp;
       }
 
-      public synchronized void registerRequest(long responseTime, boolean isPut) {
+      public synchronized void registerRequest(long responseTime, boolean isPut, boolean isNull) {
          ensureNotSnapshot();
          if (isPut) {
             requestsPut++;
@@ -412,6 +479,9 @@ public class BackgroundStats {
             }
          } else {
             requestsGet++;
+            if (isNull) {
+               requestsNullGet++;
+            }
             responseTimeSumGet += responseTime;
             if (maxResponseTimeGet < responseTime) {
                maxResponseTimeGet = responseTime;
@@ -444,6 +514,7 @@ public class BackgroundStats {
          intervalEndTime = intervalBeginTime;
          requestsPut = 0;
          requestsGet = 0;
+         requestsNullGet = 0;
          responseTimeSumPut = 0;
          responseTimeSumGet = 0;
          maxResponseTimePut = Long.MIN_VALUE;
@@ -459,6 +530,7 @@ public class BackgroundStats {
          result.responseTimeSumGet = responseTimeSumGet;
          result.requestsPut = requestsPut;
          result.requestsGet = requestsGet;
+         result.requestsNullGet = requestsNullGet;
          result.intervalBeginTime = intervalBeginTime;
          result.intervalEndTime = time;
          result.maxResponseTimePut = maxResponseTimePut;
@@ -486,6 +558,7 @@ public class BackgroundStats {
 
          result.requestsPut = requestsPut;
          result.requestsGet = requestsGet;
+         result.requestsNullGet = requestsNullGet;
          result.maxResponseTimePut = maxResponseTimePut;
          result.maxResponseTimeGet = maxResponseTimeGet;
 
@@ -508,6 +581,7 @@ public class BackgroundStats {
          intervalEndTime = Math.max(otherStats.intervalEndTime, intervalEndTime);
          requestsPut += otherStats.requestsPut;
          requestsGet += otherStats.requestsGet;
+         requestsNullGet += otherStats.requestsNullGet;
          maxResponseTimePut = Math.max(otherStats.maxResponseTimePut, maxResponseTimePut);
          maxResponseTimeGet = Math.max(otherStats.maxResponseTimeGet, maxResponseTimeGet);
          errorsPut += otherStats.errorsPut;
@@ -544,15 +618,15 @@ public class BackgroundStats {
          }
       }
 
-      public long getClientErrors() {
+      public long getNumErrors() {
          return errorsPut + errorsGet;
       }
 
-      public long getClientErrorsPut() {
+      public long getNumErrorsPut() {
          return errorsPut;
       }
 
-      public long getClientErrorsGet() {
+      public long getNumErrorsGet() {
          return errorsGet;
       }
 
@@ -662,6 +736,10 @@ public class BackgroundStats {
          return (maxDev / avg) * 100d;
       }
 
+      public long getRequestsNullGet() {
+         return requestsNullGet;
+      }
+
    }
 
    public static void beforeCacheWrapperDestroy(SlaveState slaveState) {
@@ -674,7 +752,12 @@ public class BackgroundStats {
    public static void afterCacheWrapperStart(SlaveState slaveState) {
       BackgroundStats bgStats = (BackgroundStats) slaveState.get(BackgroundStats.NAME);
       if (bgStats != null) {
+         bgStats.setLoaded(); // don't load data at this stage
          bgStats.startStressors();
       }
+   }
+
+   public void setLoaded() {
+      loaded = true;
    }
 }
