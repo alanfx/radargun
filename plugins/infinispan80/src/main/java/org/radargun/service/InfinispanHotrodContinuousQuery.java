@@ -34,7 +34,7 @@ public class InfinispanHotrodContinuousQuery implements ContinuousQuery {
       return cacheName == null ? service.managerNoReturn.getCache() : service.managerNoReturn.getCache(cacheName);
    }
 
-   private static class Listener implements org.infinispan.client.hotrod.event.ContinuousQueryListener {
+   protected static class Listener implements org.infinispan.client.hotrod.event.ContinuousQueryListener {
 
       private final ContinuousQuery.Listener cqListener;
 
@@ -53,10 +53,10 @@ public class InfinispanHotrodContinuousQuery implements ContinuousQuery {
       }
    }
 
-   private static class ListenerReference implements ContinuousQuery.ListenerReference {
-      private final Object clientListener;
+   protected static class ListenerReference implements ContinuousQuery.ListenerReference {
+      final Object clientListener;
 
-      private ListenerReference(Object clientListener) {
+      ListenerReference(Object clientListener) {
          this.clientListener = clientListener;
       }
    }

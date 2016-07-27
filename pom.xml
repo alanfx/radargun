@@ -211,10 +211,11 @@
          </activation>
          <modules>
             <module>plugins/hazelcast2</module>
-            <module>plugins/hazelcast3</module>
+            <module>plugins/hazelcast36</module>
+            <module>plugins/hazelcast37</module>
          </modules>
          <properties>
-            <plugins.hazelcast>hazelcast2,hazelcast3</plugins.hazelcast>
+            <plugins.hazelcast>hazelcast2,hazelcast36,hazelcast37</plugins.hazelcast>
          </properties>
       </profile>
       <profile>
@@ -285,9 +286,10 @@
             <module>plugins/infinispan80</module>
             <module>plugins/infinispan81</module>
             <module>plugins/infinispan82</module>
+            <module>plugins/infinispan90</module>
          </modules>
          <properties>
-            <plugins.infinispan>infinispan4,infinispan50,infinispan51,infinispan52,infinispan53,infinispan60,infinispan70,infinispan71,infinispan72,infinispan80,infinispan81,infinispan82</plugins.infinispan>
+            <plugins.infinispan>infinispan4,infinispan50,infinispan51,infinispan52,infinispan53,infinispan60,infinispan70,infinispan71,infinispan72,infinispan80,infinispan81,infinispan82,infinispan90</plugins.infinispan>
          </properties>
       </profile>
       <profile>
